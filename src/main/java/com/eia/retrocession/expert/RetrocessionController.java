@@ -47,4 +47,18 @@ public class RetrocessionController {
                                    @Valid @RequestBody UpdateRetrocessionStatusRequest request) {
         return service.transition(tenantId, id, request.status(), request.version());
     }
+
+    @PostMapping("/{id}/handoff")
+    public Retrocession recordHandoff(@RequestParam UUID tenantId,
+                                      @PathVariable UUID id,
+                                      @Valid @RequestBody RecordRetroHandoffRequest request) {
+        return service.recordHandoff(tenantId, id, request);
+    }
+
+    @PostMapping("/{id}/handoff-failure")
+    public Retrocession recordHandoffFailure(@RequestParam UUID tenantId,
+                                             @PathVariable UUID id,
+                                             @Valid @RequestBody RecordRetroHandoffFailureRequest request) {
+        return service.recordHandoffFailure(tenantId, id, request);
+    }
 }

@@ -27,6 +27,7 @@ class RetrocessionServiceTest {
     private static final UUID ID = UUID.fromString("22222222-2222-7222-8222-222222222222");
     private static final UUID CONTRACT = UUID.fromString("33333333-3333-7333-8333-333333333333");
     private static final UUID RETRO_CONTRACT = UUID.fromString("44444444-4444-7444-8444-444444444444");
+    private static final Instant NOW = Instant.parse("2026-10-19T12:00:00Z");
 
     @Mock
     private RetrocessionRepository repository;
@@ -40,9 +41,21 @@ class RetrocessionServiceTest {
     }
 
     private static Retrocession retrocession(RetrocessionStatus status, int version) {
-        Instant now = Instant.parse("2026-10-19T12:00:00Z");
         return new Retrocession(ID, TENANT, "ASSUMED", "RET-000000001", CONTRACT, RETRO_CONTRACT, status,
-                new BigDecimal("1000.0000"), new BigDecimal("250.0000"), "USD", version, now, now);
+                new BigDecimal("1000.0000"), new BigDecimal("250.0000"), "USD", version, NOW, NOW,
+                null, null, null, null);
+    }
+
+    private static Retrocession handedOff() {
+        return new Retrocession(ID, TENANT, "ASSUMED", "RET-000000001", CONTRACT, RETRO_CONTRACT,
+                RetrocessionStatus.HANDED_OFF, new BigDecimal("1000.0000"), new BigDecimal("250.0000"),
+                "USD", 1, NOW, NOW, "FSRI-RET-ASSUMED-000001", "POSTED", NOW, null);
+    }
+
+    private static Retrocession failed() {
+        return new Retrocession(ID, TENANT, "ASSUMED", "RET-000000001", CONTRACT, RETRO_CONTRACT,
+                RetrocessionStatus.RULE_APPLIED, new BigDecimal("1000.0000"), new BigDecimal("250.0000"),
+                "USD", 0, NOW, NOW, null, "FAILED", null, "FSRI_UNAVAILABLE: timeout");
     }
 
     @Test
@@ -142,6 +155,83 @@ class RetrocessionServiceTest {
                     assertThat(ex.getCode()).isEqualTo("CONFLICT");
                     assertThat(ex.getStatus().value()).isEqualTo(409);
                 });
+    }
+
+    @Test
+    void refusesHandoffStateThroughThePlainStatusPath() {
+        when(repository.findById(TENANT, ID))
+                .thenReturn(Optional.of(retrocession(RetrocessionStatus.RULE_APPLIED, 0)));
+
+        assertThatThrownBy(() -> service.transition(TENANT, ID, RetrocessionStatus.HANDOFF_PENDING, 0))
+                .isInstanceOfSatisfying(ApiException.class, ex -> {
+                    assertThat(ex.getCode()).isEqualTo("HANDOFF_REQUIRED");
+                    assertThat(ex.getStatus().value()).isEqualTo(400);
+                });
+
+        verify(repository, never()).updateStatus(any(), any(), any(), anyInt());
+    }
+
+    @Test
+    void recordsFsriAcknowledgementAndMovesToHandedOff() {
+        when(repository.findById(TENANT, ID))
+                .thenReturn(Optional.of(retrocession(RetrocessionStatus.RULE_APPLIED, 0)));
+        when(repository.recordHandoff(TENANT, ID, 0, "FSRI-RET-ASSUMED-000001", "POSTED", NOW))
+                .thenReturn(Optional.of(handedOff()));
+
+        Retrocession updated = service.recordHandoff(TENANT, ID,
+                new RecordRetroHandoffRequest(0, "FSRI-RET-ASSUMED-000001", "POSTED", NOW));
+
+        assertThat(updated.status()).isEqualTo(RetrocessionStatus.HANDED_OFF);
+        assertThat(updated.fsriHandoffId()).isEqualTo("FSRI-RET-ASSUMED-000001");
+        assertThat(updated.fsriStatus()).isEqualTo("POSTED");
+        assertThat(updated.fsriHandedOffAt()).isEqualTo(NOW);
+        verify(repository).recordHandoff(TENANT, ID, 0, "FSRI-RET-ASSUMED-000001", "POSTED", NOW);
+    }
+
+    @Test
+    void rejectsHandoffFromANonHandoffReadyStatus() {
+        when(repository.findById(TENANT, ID)).thenReturn(Optional.of(retrocession(RetrocessionStatus.OPEN, 0)));
+
+        assertThatThrownBy(() -> service.recordHandoff(TENANT, ID,
+                new RecordRetroHandoffRequest(0, "FSRI-RET-ASSUMED-000001", "POSTED", NOW)))
+                .isInstanceOfSatisfying(ApiException.class, ex -> {
+                    assertThat(ex.getCode()).isEqualTo("INVALID_STATUS_TRANSITION");
+                    assertThat(ex.getStatus().value()).isEqualTo(400);
+                });
+
+        verify(repository, never()).recordHandoff(any(), any(), anyInt(), any(), any(), any());
+    }
+
+    @Test
+    void rejectsStaleHandoffVersionWithoutChangingState() {
+        when(repository.findById(TENANT, ID))
+                .thenReturn(Optional.of(retrocession(RetrocessionStatus.RULE_APPLIED, 2)));
+
+        assertThatThrownBy(() -> service.recordHandoff(TENANT, ID,
+                new RecordRetroHandoffRequest(1, "FSRI-RET-ASSUMED-000001", "POSTED", NOW)))
+                .isInstanceOfSatisfying(ApiException.class, ex -> {
+                    assertThat(ex.getCode()).isEqualTo("CONFLICT");
+                    assertThat(ex.getStatus().value()).isEqualTo(409);
+                });
+
+        verify(repository, never()).recordHandoff(any(), any(), anyInt(), any(), any(), any());
+    }
+
+    @Test
+    void recordsHandoffFailureWithoutChangingLifecycleStatus() {
+        when(repository.findById(TENANT, ID))
+                .thenReturn(Optional.of(retrocession(RetrocessionStatus.RULE_APPLIED, 0)));
+        when(repository.recordHandoffFailure(TENANT, ID, 0, "FSRI_UNAVAILABLE: timeout"))
+                .thenReturn(Optional.of(failed()));
+
+        Retrocession updated = service.recordHandoffFailure(TENANT, ID,
+                new RecordRetroHandoffFailureRequest(0, "FSRI_UNAVAILABLE: timeout"));
+
+        assertThat(updated.status()).isEqualTo(RetrocessionStatus.RULE_APPLIED);
+        assertThat(updated.version()).isZero();
+        assertThat(updated.fsriStatus()).isEqualTo("FAILED");
+        assertThat(updated.fsriLastError()).isEqualTo("FSRI_UNAVAILABLE: timeout");
+        assertThat(updated.fsriHandoffId()).isNull();
     }
 
     @Test

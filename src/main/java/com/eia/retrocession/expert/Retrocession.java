@@ -25,5 +25,27 @@ public record Retrocession(
         String currency,
         int version,
         Instant createdAt,
-        Instant updatedAt
-) {}
+        Instant updatedAt,
+        String fsriHandoffId,
+        String fsriStatus,
+        Instant fsriHandedOffAt,
+        String fsriLastError
+) {
+    public Retrocession(UUID id,
+                        UUID tenantId,
+                        String businessBook,
+                        String retrocessionNumber,
+                        UUID contractId,
+                        UUID retroContractId,
+                        RetrocessionStatus status,
+                        BigDecimal cededPremium,
+                        BigDecimal cededLoss,
+                        String currency,
+                        int version,
+                        Instant createdAt,
+                        Instant updatedAt) {
+        this(id, tenantId, businessBook, retrocessionNumber, contractId, retroContractId, status,
+                cededPremium, cededLoss, currency, version, createdAt, updatedAt,
+                null, null, null, null);
+    }
+}

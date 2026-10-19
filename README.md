@@ -16,10 +16,11 @@ Retrocession persistence, invariants, read models, batch jobs, Quartz schedules,
 ## Implemented slice
 
 - Spring Boot 3.4.0 on Java 22, port `8093`, PostgreSQL database `eia_retrocession`.
-- `retrocession` table with `retrocession_number`, `contract_id`, `retro_contract_id`, `status`, `ceded_premium`, `ceded_loss`, `currency`, `version`, `created_at`, and `updated_at`.
-- Internal API under `/internal/v1/retrocessions` (list, get, create, status transition).
+- `retrocession` table with `retrocession_number`, `contract_id`, `retro_contract_id`, `status`, `ceded_premium`, `ceded_loss`, `currency`, `version`, `created_at`, and `updated_at`, plus the FS-RI hand-off columns `fsri_handoff_id`, `fsri_status`, `fsri_handed_off_at`, and `fsri_last_error`.
+- Internal API under `/internal/v1/retrocessions` (list, get, create, status transition, `POST /{id}/handoff`, `POST /{id}/handoff-failure`).
 - Enforces ASSUMED-only book, non-negative ceded amounts, three-letter currency, the retro-case lifecycle from SPEC 11.10.3, and optimistic versioning.
-- JUnit controller and service tests.
+- The plain status endpoint refuses `HANDOFF_PENDING`/`HANDED_OFF` (`HANDOFF_REQUIRED`). The hand-off endpoint applies the FS-RI acknowledgement and `HANDED_OFF` in one optimistic UPDATE; a failed attempt records `fsri_status = FAILED` and `fsri_last_error` without changing the lifecycle status or consuming a version, so the retry reuses the same transition version and idempotency key.
+- JUnit controller, service, and H2-backed persistence/transaction tests.
 
 ## Local run
 
