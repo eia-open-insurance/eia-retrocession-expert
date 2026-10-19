@@ -1,0 +1,17 @@
+server:
+  port: 8093
+spring:
+  application:
+    name: eia-retrocession-expert
+  datasource:
+    url: jdbc:postgresql://localhost:5432/eia_retrocession
+    username: postgres
+    password: postgres
+  sql:
+    init:
+      mode: always
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
