@@ -56,6 +56,18 @@ class RetrocessionControllerTest {
     }
 
     @Test
+    void moneyFieldsAreSerializedAsDecimalStrings() throws Exception {
+        when(repository.findAll(TENANT)).thenReturn(List.of(retrocession(RetrocessionStatus.OPEN, 0)));
+
+        mvc.perform(get("/internal/v1/retrocessions").param("tenantId", TENANT.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].cededPremium").isString())
+                .andExpect(jsonPath("$[0].cededPremium").value("1000.0000"))
+                .andExpect(jsonPath("$[0].cededLoss").isString())
+                .andExpect(jsonPath("$[0].cededLoss").value("250.0000"));
+    }
+
+    @Test
     void returnsStructured404ForUnknownRetrocession() throws Exception {
         when(repository.findById(TENANT, ID)).thenReturn(Optional.empty());
 

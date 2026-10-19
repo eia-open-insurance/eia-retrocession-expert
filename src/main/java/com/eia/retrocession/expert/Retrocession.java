@@ -1,5 +1,7 @@
 package com.eia.retrocession.expert;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
+
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
@@ -18,8 +20,8 @@ public record Retrocession(
         UUID contractId,
         UUID retroContractId,
         RetrocessionStatus status,
-        BigDecimal cededPremium,
-        BigDecimal cededLoss,
+        @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal cededPremium,
+        @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal cededLoss,
         String currency,
         int version,
         Instant createdAt,
