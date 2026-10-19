@@ -1,5 +1,8 @@
 package com.eia.retrocession.expert;
 
+import com.eia.platform.libs.outbox.OutboxEvent;
+import com.eia.platform.libs.outbox.OutboxRepository;
+
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -18,13 +21,19 @@ import org.springframework.transaction.annotation.Transactional;
  * combine the lifecycle guard, the optimistic version check, and the FS-RI
  * acknowledgement in one transaction. A plain status update can never write
  * {@code HANDOFF_PENDING} or {@code HANDED_OFF}.</p>
+ *
+ * <p>Every aggregate write also appends its domain event to the transactional
+ * outbox in the same transaction (SPEC 7.5.1), so a rollback leaves neither the
+ * retrocession mutation nor the event behind.</p>
  */
 @Service
 public class RetrocessionService {
     private final RetrocessionRepository repository;
+    private final OutboxRepository outbox;
 
-    public RetrocessionService(RetrocessionRepository repository) {
+    public RetrocessionService(RetrocessionRepository repository, OutboxRepository outbox) {
         this.repository = repository;
+        this.outbox = outbox;
     }
 
     public List<Retrocession> list(UUID tenantId) {
@@ -36,13 +45,16 @@ public class RetrocessionService {
                 .orElseThrow(() -> ApiException.notFound("Retrocession not found: " + id));
     }
 
+    @Transactional
     public Retrocession create(CreateRetrocessionRequest request) {
         requireAssumedBook(request.businessBook());
         requireNonNegative("cededPremium", request.cededPremium());
         requireNonNegative("cededLoss", request.cededLoss());
         String currency = requireCurrency(request.currency());
-        return repository.create(request.tenantId(), request.contractId(), request.retroContractId(),
-                request.cededPremium(), request.cededLoss(), currency);
+        Retrocession retrocession = repository.create(request.tenantId(), request.contractId(),
+                request.retroContractId(), request.cededPremium(), request.cededLoss(), currency);
+        outbox.insert(OutboxEvent.fromEnvelope(RetrocessionEvents.created(retrocession, Instant.now())));
+        return retrocession;
     }
 
     @Transactional
@@ -57,8 +69,10 @@ public class RetrocessionService {
             throw ApiException.badRequest("HANDOFF_REQUIRED",
                     "Retrocession " + id + " can move to " + target + " only through the FS-RI handoff endpoint");
         }
-        return repository.updateStatus(tenantId, id, target, expectedVersion)
+        Retrocession after = repository.updateStatus(tenantId, id, target, expectedVersion)
                 .orElseThrow(() -> ApiException.conflict("Retrocession " + id + " was modified concurrently"));
+        outbox.insert(OutboxEvent.fromEnvelope(RetrocessionEvents.updated(current, after, Instant.now())));
+        return after;
     }
 
     /**
@@ -78,9 +92,11 @@ public class RetrocessionService {
             throw ApiException.validation("fsriHandedOffAt", "must not be null");
         }
         Instant handedOffAt = request.fsriHandedOffAt();
-        return repository.recordHandoff(tenantId, id, expectedVersion,
+        Retrocession after = repository.recordHandoff(tenantId, id, expectedVersion,
                         fsriHandoffId, fsriStatus, handedOffAt)
                 .orElseThrow(() -> ApiException.conflict("Retrocession " + id + " was modified concurrently"));
+        outbox.insert(OutboxEvent.fromEnvelope(RetrocessionEvents.handedOff(current, after, Instant.now())));
+        return after;
     }
 
     /**
