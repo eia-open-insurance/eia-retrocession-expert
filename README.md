@@ -11,7 +11,7 @@
 
 ## Purpose
 
-Retrocession persistence, invariants, read models, batch jobs, Quartz schedules, and outbox/inbox. Assumed-book retrocession contracts, retro rules, FS-RI hand-off, and recoverables.
+Retrocession persistence, invariants, read models, batch jobs, Quartz schedules, and outbox/inbox. Reinsurance-book retrocession contracts, retro rules, FS-RI hand-off, and recoverables.
 
 ## Responsibilities
 
