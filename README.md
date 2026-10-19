@@ -7,7 +7,7 @@
 - Owner: Retrocession
 - Runtime: Java 22, Spring Boot, Spring Batch, Quartz
 - Data store: eia_retrocession (ent, ref, audit schemas)
-- Depends on: eia-contracts, eia-open-insurance-libs
+- Depends on: eia-contracts, eia-platform/libs
 
 ## Purpose
 
